@@ -75,18 +75,6 @@ Visit the app at: `http://127.0.0.1:8000`
 
 ---
 
-## 📸 Screenshots
-
-| Dashboard | Analysis Result |
-|-----------|-----------------|
-| *(Add screenshot here)* | *(Add screenshot here)* |
-
----
-
-## 🤝 Contributing
-Contributions are welcome! Please open an issue or submit a pull request for any improvements.
-
----
 
 ## 📜 License
 This project is licensed under the MIT License.
