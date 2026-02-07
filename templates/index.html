@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoDetector - Intelligence for Cartography</title>
+
+    <!-- Libraries -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <!-- Markdown Renderer -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+            overflow-x: hidden;
+            background-color: #f8fafc;
+            color: #1e293b;
+        }
+
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: radial-gradient(circle at center, #ffffff, #f1f5f9);
+        }
+
+        /* Light Mode Glass Panel */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.6);
+            box-shadow: 0 8px 32px 0 rgba(30, 41, 59, 0.1);
+        }
+
+        .upload-zone {
+            border: 2px dashed rgba(30, 41, 59, 0.2);
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .upload-zone:hover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+
+        /* Chat Overlay */
+        #chat-overlay {
+            display: none;
+        }
+
+        #chat-overlay.active {
+            display: flex !important;
+        }
+
+        .message-bubble {
+            max-width: 85%;
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .message-user {
+            background: #2563eb;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 2px;
+        }
+
+        .message-bot {
+            background: white;
+            color: #1e293b;
+            align-self: flex-start;
+            border-bottom-left-radius: 2px;
+            border: 1px solid #e2e8f0;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .message-bot code {
+            background: #f1f5f9;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: #0f172a;
+        }
+
+        [v-cloak] {
+            display: none;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen">
+
+    <!-- INITIAL LOADER -->
+    <div id="initial-loader"
+        class="fixed inset-0 z-[100000] bg-slate-50 flex flex-col items-center justify-center transition-opacity duration-1000">
+        <div class="relative w-32 h-32 mb-8">
+            <!-- Outer Ring -->
+            <div class="absolute inset-0 border-4 border-slate-200 rounded-full"></div>
+            <!-- Spinning Ring -->
+            <div
+                class="absolute inset-0 border-4 border-t-blue-600 border-r-blue-600 rounded-full animate-spin duration-700">
+            </div>
+            <!-- Inner Glowing Orb -->
+            <div class="absolute inset-4 bg-white rounded-full shadow-lg flex items-center justify-center z-10">
+                <i class="fa-solid fa-earth-americas text-5xl text-blue-600 animate-pulse"></i>
+            </div>
+            <!-- Orbiting Dot -->
+            <div class="absolute inset-0 animate-spin" style="animation-duration: 3s;">
+                <div
+                    class="w-3 h-3 bg-red-500 rounded-full absolute -top-1.5 left-1/2 -translate-x-1/2 shadow-md shadow-red-500/50">
+                </div>
+            </div>
+        </div>
+        <h1 class="text-4xl font-bold text-slate-800 tracking-tight mb-2 animate-bounce">GeoDetector</h1>
+        <div class="flex items-center gap-2">
+            <span class="w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
+            <p class="text-slate-500 text-xs font-bold tracking-[0.3em] uppercase">Calibrating Satellites...</p>
+        </div>
+    </div>
+
+    <script>
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                const loader = document.getElementById('initial-loader');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    loader.style.pointerEvents = 'none';
+                    setTimeout(() => loader.remove(), 1000);
+                }
+            }, 2000); // 2 seconds branding time
+        });
+    </script>
+
+    <div id="canvas-container"></div>
+
+    <div id="app" v-cloak class="min-h-screen flex flex-col relative z-10">
+        {% verbatim %}
+
+        <!-- Header -->
+        <header class="w-full py-6 px-8 flex justify-between items-center bg-transparent relative z-50">
+            <div class="flex items-center gap-4">
+                <!-- LOGO -->
+                <div class="h-16 w-auto flex items-center justify-center shrink-0 rounded-lg overflow-hidden">
+                    <img src="/static/images/logo.png?v=3" class="h-full w-auto object-contain"
+                        onerror="this.style.display='none'">
+                </div>
+                <div>
+                    <h1 class="text-3xl font-bold tracking-tight text-slate-800 drop-shadow-sm leading-none">GeoDetector
+                    </h1>
+                    <p class="text-xs font-bold tracking-[0.2em] text-blue-600 uppercase mt-1">Pinpoint The Unknown</p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow flex items-center justify-center p-6 w-full max-w-7xl mx-auto relative z-10">
+            <div class="w-full grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+                <!-- Text Section -->
+                <div class="text-center lg:text-left space-y-10 animate-fade-in-up">
+                    <h2 class="text-6xl md:text-7xl font-bold leading-tight tracking-tight text-slate-900">
+                        <span
+                            class="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-cyan-500">AI-Powered</span><br>Cartography
+                    </h2>
+                    <p class="text-xl text-slate-600 leading-relaxed max-w-xl mx-auto lg:mx-0 font-light tracking-wide">
+                        Detect geometric errors and validate map integrity with neural precision.
+                    </p>
+                    <div class="flex gap-6 justify-center lg:justify-start pt-4">
+                        <div
+                            class="glass-panel px-8 py-5 rounded-2xl text-center cursor-default group hover:bg-white transition-colors">
+                            <div class="text-4xl font-bold text-blue-600 group-hover:scale-110 transition-transform">98%
+                            </div>
+                            <div class="text-xs text-slate-500 uppercase tracking-widest mt-1">Accuracy</div>
+                        </div>
+                        <div
+                            class="glass-panel px-8 py-5 rounded-2xl text-center cursor-default group hover:bg-white transition-colors">
+                            <div class="text-4xl font-bold text-cyan-600 group-hover:scale-110 transition-transform">
+                                < 1s</div>
+                                    <div class="text-xs text-slate-500 uppercase tracking-widest mt-1">Inference</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Interface Section -->
+                    <div
+                        class="glass-panel rounded-[2rem] p-8 w-full max-w-xl mx-auto relative overflow-hidden shadow-2xl ring-1 ring-black/5 bg-white/40">
+                        <div v-if="loadingAnalysis"
+                            class="absolute inset-0 z-50 bg-white/95 backdrop-blur-md flex flex-col items-center justify-center">
+                            <div class="relative w-20 h-20 mb-6">
+                                <div class="absolute inset-0 border-4 border-blue-500/20 rounded-full"></div>
+                                <div class="absolute inset-0 border-4 border-t-blue-600 rounded-full animate-spin">
+                                </div>
+                                <i
+                                    class="fa-solid fa-satellite text-blue-500 absolute inset-0 m-auto flex items-center justify-center text-xl animate-pulse"></i>
+                            </div>
+                            <p class="text-blue-600 font-bold tracking-widest text-sm animate-pulse">SCANNING
+                                GEOMETRY...</p>
+                        </div>
+
+                        <div v-if="!imagePreview"
+                            class="upload-zone rounded-2xl h-[400px] flex flex-col items-center justify-center cursor-pointer group"
+                            @dragover.prevent @drop.prevent="handleDrop" @click="triggerUpload">
+                            <input type="file" ref="fileInput" class="hidden" @change="handleFileSelect"
+                                accept="image/*">
+                            <div
+                                class="w-24 h-24 rounded-full bg-blue-50/50 flex items-center justify-center mb-8 group-hover:bg-blue-100/50 group-hover:scale-110 transition-all border border-blue-200">
+                                <i class="fa-solid fa-cloud-arrow-up text-4xl text-blue-500"></i>
+                            </div>
+                            <h3 class="text-2xl font-bold text-slate-800 mb-3">Upload Map</h3>
+                            <p class="text-slate-500 text-sm font-medium">JPEG, PNG • Max 10MB</p>
+                        </div>
+
+                        <div v-else class="h-full flex flex-col">
+                            <div
+                                class="relative h-72 rounded-2xl overflow-hidden bg-slate-100 mb-8 border border-slate-200 group shadow-inner">
+                                <img :src="imagePreview" class="w-full h-full object-contain p-4">
+                            </div>
+
+                            <div v-if="analysisResult" class="flex-grow animate-fade-in space-y-4">
+                                <div class="flex items-center justify-between p-6 rounded-2xl border backdrop-blur-md shadow-lg bg-white"
+                                    :class="{
+                                        'border-green-200': analysisResult.label === 'GOOD MAP',
+                                        'border-red-200': analysisResult.label === 'BAD MAP',
+                                        'border-yellow-200': analysisResult.label === 'NOT A MAP'
+                                    }">
+                                    <div class="flex items-center gap-5">
+                                        <div class="w-12 h-12 rounded-full flex items-center justify-center border"
+                                            :class="{
+                                                'bg-green-100 text-green-600 border-green-200': analysisResult.label === 'GOOD MAP',
+                                                'bg-red-100 text-red-600 border-red-200': analysisResult.label === 'BAD MAP',
+                                                'bg-yellow-100 text-yellow-600 border-yellow-200': analysisResult.label === 'NOT A MAP'
+                                            }">
+                                            <i class="text-xl" :class="{
+                                                    'fa-solid fa-check': analysisResult.label === 'GOOD MAP',
+                                                    'fa-solid fa-triangle-exclamation': analysisResult.label === 'BAD MAP',
+                                                    'fa-solid fa-circle-question': analysisResult.label === 'NOT A MAP'
+                                                }"></i>
+                                        </div>
+                                        <div>
+                                            <h3 class="font-bold text-xl leading-tight tracking-wide" :class="{
+                                                    'text-green-700': analysisResult.label === 'GOOD MAP',
+                                                    'text-red-700': analysisResult.label === 'BAD MAP',
+                                                    'text-yellow-700': analysisResult.label === 'NOT A MAP'
+                                                }">
+                                                {{ analysisResult.label }}
+                                            </h3>
+                                            <p class="text-sm font-medium mt-1 opacity-90 max-w-[200px]" :class="{
+                                                    'text-green-600': analysisResult.label === 'GOOD MAP',
+                                                    'text-red-600': analysisResult.label === 'BAD MAP',
+                                                    'text-yellow-600': analysisResult.label === 'NOT A MAP'
+                                               }">
+                                                {{ analysisResult.reason }}
+                                            </p>
+                                            <p class="text-xs text-slate-400 uppercase tracking-widest mt-1">Assessment
+                                                Complete</p>
+                                        </div>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-4xl font-bold text-slate-800 tracking-tighter">{{
+                                            safeConfidence }}%</span>
+                                    </div>
+                                </div>
+                                <button @click="resetAnalysis"
+                                    class="w-full py-4 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl text-sm font-bold uppercase tracking-wider transition-all text-slate-600 mt-4">Analyze
+                                    Another</button>
+                            </div>
+
+                            <button v-else @click="submitAnalysis"
+                                class="w-full py-5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/20 transition-all transform hover:scale-[1.02] text-lg tracking-wide">RUN
+                                DIAGNOSTIC SCAN</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CHATBOT FLOATING BUTTON -->
+                <button onclick="window.toggleChatModal()"
+                    class="fixed bottom-10 right-10 w-16 h-16 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl shadow-blue-600/30 flex items-center justify-center transition-all transform hover:scale-110 active:scale-95 z-[9999] group border-4 border-white">
+                    <i class="fa-solid fa-comment-dots text-2xl group-hover:animate-pulse"></i>
+                </button>
+
+                <!-- CHATBOT WINDOW (Centered Overlay) -->
+                <div id="chat-overlay"
+                    class="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm"
+                    onclick="if(event.target === this) window.closeChat()">
+                    <div
+                        class="w-full max-w-lg h-[600px] glass-panel rounded-2xl flex flex-col overflow-hidden border border-white/50 shadow-2xl bg-white/90">
+
+                        <!-- Chat Header -->
+                        <div class="px-5 py-4 bg-white/50 border-b border-slate-100 flex justify-between items-center">
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center shadow-md">
+                                    <i class="fa-solid fa-robot text-white text-lg"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-base font-bold text-slate-800">GeoDetector</h3>
+                                    <p
+                                        class="text-[10px] text-green-600 flex items-center gap-1 font-bold uppercase tracking-wide">
+                                        <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Online
+                                    </p>
+                                </div>
+                            </div>
+                            <button onclick="window.closeChat()"
+                                class="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-100 rounded-full">
+                                <i class="fa-solid fa-xmark text-xl"></i>
+                            </button>
+                        </div>
+
+                        <!-- Chat Messages -->
+                        <div class="flex-grow p-5 overflow-y-auto space-y-4 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent bg-slate-50"
+                            ref="chatContainer">
+                            <div v-for="(msg, index) in chatHistory" :key="index" class="flex flex-col"
+                                :class="msg.role === 'user' ? 'items-end' : 'items-start'">
+                                <div class="message-bubble shadow-sm"
+                                    :class="msg.role === 'user' ? 'message-user' : 'message-bot'">
+                                    <div v-if="msg.role === 'assistant'" v-html="renderMarkdown(msg.content)"></div>
+                                    <div v-else>{{ msg.content }}</div>
+                                </div>
+                            </div>
+
+                            <div v-if="loadingChat"
+                                class="flex items-center gap-1.5 p-2 bg-white rounded-lg w-fit ml-2 border border-slate-100">
+                                <span class="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce"></span>
+                                <span class="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce"
+                                    style="animation-delay: 0.15s"></span>
+                                <span class="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce"
+                                    style="animation-delay: 0.3s"></span>
+                            </div>
+                        </div>
+
+                        <!-- Chat Input -->
+                        <div class="p-4 bg-white border-t border-slate-100">
+                            <form @submit.prevent="sendMessage" class="flex gap-3 relative">
+                                <input v-model="chatInput" type="text" placeholder="Ask GeoBot..."
+                                    class="flex-grow bg-slate-100 border border-slate-200 rounded-xl pl-4 pr-12 py-3.5 text-sm text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white transition-all placeholder-slate-400"
+                                    :disabled="loadingChat">
+                                <button type="submit"
+                                    class="absolute right-2 top-2 bottom-2 w-10 bg-blue-600 hover:bg-blue-700 rounded-lg flex items-center justify-center text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
+                                    :disabled="loadingChat || !chatInput.trim()">
+                                    <i class="fa-solid fa-paper-plane text-xs"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+
+        </main>
+        {% endverbatim %}
+    </div>
+
+    <script>
+        // ==========================================
+        // SPEECH SYNTHESIS GLOBAL HELPER
+        // ==========================================
+        window.speakText = function (text) {
+            if (!('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+
+            // Clean Markdown symbols for speech (basic)
+            const cleanText = text.replace(/[*#`]/g, '');
+
+            const utterance = new SpeechSynthesisUtterance(cleanText);
+            const voices = window.speechSynthesis.getVoices();
+            // Prefer Google US English or Microsoft David/Zira
+            const preferredVoice = voices.find(v => v.name.includes('Google US English') || v.name.includes('David')) || voices[0];
+            if (preferredVoice) utterance.voice = preferredVoice;
+            utterance.rate = 1.1;
+            window.speechSynthesis.speak(utterance);
+        };
+
+        window.toggleChatModal = function () {
+            const overlay = document.getElementById('chat-overlay');
+            if (overlay) {
+                if (overlay.classList.contains('active')) {
+                    window.closeChat();
+                } else {
+                    console.log("Opening chat...");
+                    overlay.classList.add('active');
+
+                    // Welcome Voice
+                    window.speakText("Hello! I'm GeoBot. I can help you verify map distortions and explain cartographic anomalies. How can I assist you today?");
+
+                    setTimeout(() => {
+                        const container = document.querySelector('.overflow-y-auto');
+                        if (container) container.scrollTop = container.scrollHeight;
+                    }, 100);
+                }
+            }
+        };
+
+        window.closeChat = function () {
+            console.log("Closing chat...");
+            const overlay = document.getElementById('chat-overlay');
+            if (overlay) overlay.classList.remove('active');
+
+            // Stop voice immediately when closing
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        };
+
+        // ==========================================
+        // 1. THREE.JS BACKGROUND
+        // ==========================================
+        document.addEventListener('DOMContentLoaded', () => {
+            initThreeJS();
+            initVueApp();
+        });
+
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            if (!container) return;
+
+            const scene = new THREE.Scene();
+            // Fog to fade out the distant horizon into white
+            scene.fog = new THREE.FogExp2(0xffffff, 0.02);
+
+            const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 15, 30);
+            camera.lookAt(0, 0, 0);
+
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.domElement.style.zIndex = "-1";
+            container.appendChild(renderer.domElement);
+
+            // Create Terrain Plane
+            const geometry = new THREE.PlaneGeometry(120, 120, 60, 60);
+
+            // Material: Blue wireframe
+            const material = new THREE.MeshBasicMaterial({
+                color: 0x3b82f6, // Blue-500
+                wireframe: true,
+                transparent: true,
+                opacity: 0.15,
+                side: THREE.DoubleSide
+            });
+
+            const terrain = new THREE.Mesh(geometry, material);
+            terrain.rotation.x = -Math.PI / 2; // Flat on the ground
+            scene.add(terrain);
+
+            // Store original positions for animation reference
+            const count = geometry.attributes.position.count;
+            const originalPositions = new Float32Array(count * 3);
+            for (let i = 0; i < count * 3; i++) {
+                originalPositions[i] = geometry.attributes.position.array[i];
+            }
+
+            const clock = new THREE.Clock();
+
+            function animate() {
+                const time = clock.getElapsedTime() * 0.5;
+
+                // Animate Vertices
+                const positions = geometry.attributes.position.array;
+
+                for (let i = 0; i < count; i++) {
+                    // Access Z (which is Up because of rotation, but in local space it's Z)
+                    // Actually since we rotated X by -90, local Z is World Y? No.
+                    // Plane assumes Z is normal.
+
+                    const x = originalPositions[i * 3];
+                    const y = originalPositions[i * 3 + 1];
+                    const z = originalPositions[i * 3 + 2];
+
+                    // Perlin-ish noise using sine waves
+                    // Elevate Z based on X and Y and Time
+                    const height = Math.sin(x * 0.1 + time) * Math.cos(y * 0.1 + time) * 3;
+
+                    positions[i * 3 + 2] = z + height;
+                }
+
+                geometry.attributes.position.needsUpdate = true;
+
+                // Rotate slightly
+                terrain.rotation.z = time * 0.05;
+
+                renderer.render(scene, camera);
+                requestAnimationFrame(animate);
+            }
+            animate();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // ==========================================
+        // 2. VUE.JS APPLICATION
+        // ==========================================
+        function initVueApp() {
+            if (typeof Vue === 'undefined') { console.error("Vue missing"); return; }
+            const { createApp, ref, computed, nextTick } = Vue;
+
+            createApp({
+                setup() {
+                    const imagePreview = ref(null);
+                    const imageFile = ref(null);
+                    const loadingAnalysis = ref(false);
+                    const analysisResult = ref(null);
+                    const fileInput = ref(null);
+                    const chatInput = ref('');
+                    const loadingChat = ref(false);
+                    const chatContainer = ref(null);
+                    const chatHistory = ref([
+                        { role: 'assistant', content: "Hello! I'm **GeoBot**. I can help you verify map distortions and explain cartographic anomalies. How can I assist you today?" }
+                    ]);
+
+                    const safeConfidence = computed(() => {
+                        if (!analysisResult.value) return 0;
+                        const label = analysisResult.value.label;
+                        const confs = analysisResult.value.confidences;
+                        return confs && confs[label] ? confs[label] : 0;
+                    });
+
+                    const triggerUpload = () => { if (fileInput.value) fileInput.value.click(); };
+
+                    const handleFileSelect = (event) => {
+                        const file = event.target.files[0];
+                        if (file) {
+                            imageFile.value = file;
+                            imagePreview.value = URL.createObjectURL(file);
+                            analysisResult.value = null;
+                        }
+                    };
+
+                    const handleDrop = (event) => {
+                        const file = event.dataTransfer.files[0];
+                        if (file && file.type.startsWith('image/')) {
+                            imageFile.value = file;
+                            imagePreview.value = URL.createObjectURL(file);
+                            analysisResult.value = null;
+                        }
+                    };
+
+                    const resetAnalysis = () => { imagePreview.value = null; imageFile.value = null; analysisResult.value = null; };
+
+                    const submitAnalysis = async () => {
+                        if (!imageFile.value) return;
+                        loadingAnalysis.value = true;
+                        const formData = new FormData();
+                        formData.append('image', imageFile.value);
+                        try {
+                            const response = await fetch('/analyze/', { method: 'POST', body: formData });
+                            const data = await response.json();
+                            await new Promise(r => setTimeout(r, 1000));
+                            if (data.status === 'success') {
+                                analysisResult.value = data;
+                                speakResult(data);
+                            } else {
+                                alert("Analysis Error: " + data.message);
+                            }
+                        } catch (error) { alert("Failed to connect to server."); }
+                        finally { loadingAnalysis.value = false; }
+                    };
+
+                    // Local speaker removed, using window.speakText
+
+
+                    const speakResult = (data) => {
+                        const text = `Analysis Complete. Result is ${data.label}. ${data.reason}`;
+                        window.speakText(text);
+                    };
+
+                    const renderMarkdown = (text) => {
+                        if (typeof marked === 'undefined') return text;
+                        return marked.parse(text);
+                    };
+
+                    const scrollToBottom = () => {
+                        nextTick(() => { if (chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight; });
+                    };
+
+                    const sendMessage = async () => {
+                        if (!chatInput.value.trim()) return;
+                        const msg = chatInput.value;
+                        chatHistory.value.push({ role: 'user', content: msg });
+                        chatInput.value = '';
+                        loadingChat.value = true;
+                        scrollToBottom();
+                        try {
+                            const historyPayload = chatHistory.value.map(m => ({ role: m.role, content: m.content }));
+                            const response = await fetch('/chat/', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ message: msg, history: historyPayload })
+                            });
+                            const data = await response.json();
+                            if (data.status === 'success') {
+                                chatHistory.value.push({ role: 'assistant', content: data.response });
+                                window.speakText(data.response);
+                            }
+                            else chatHistory.value.push({ role: 'assistant', content: "Error: " + data.message });
+                        } catch (error) { chatHistory.value.push({ role: 'assistant', content: "Connection failed." }); }
+                        finally { loadingChat.value = false; scrollToBottom(); }
+                    };
+
+                    return {
+                        imagePreview, loadingAnalysis, analysisResult, safeConfidence, fileInput,
+                        triggerUpload, handleFileSelect, handleDrop, submitAnalysis, resetAnalysis,
+                        chatInput, loadingChat, chatHistory, chatContainer,
+                        sendMessage, renderMarkdown
+                    };
+                }
+            }).mount('#app');
+        }
+    </script>
+</body>
+
+</html>
